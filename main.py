@@ -10,7 +10,14 @@ from google.oauth2.service_account import Credentials
 
 # --- Google Sheets Configuration ---
 DATA_SHEET_NAME = "timetable"  # Your Google Sheet name
-CREDENTIALS_FILE = "productivity-450902-c3aafad7c158.json"  # Your downloaded JSON file
+
+# --- Utility Function to Get Google Credentials from Environment Variable ---
+def get_google_credentials():
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS")
+    if not credentials_json:
+        raise Exception("Environment variable GOOGLE_CREDENTIALS not found")
+    creds_dict = json.loads(credentials_json)
+    return Credentials.from_service_account_info(creds_dict)
 
 # --- Utility Functions for Persistence with Google Sheets ---
 def serialize_data(data):
@@ -40,7 +47,7 @@ def deserialize_data(json_str):
 def load_data_from_file():
     """Loads subject chapter data from Google Sheets."""
     try:
-        creds = Credentials.from_service_account_file(CREDENTIALS_FILE)
+        creds = get_google_credentials()
         client = gspread.authorize(creds)
         sheet = client.open(DATA_SHEET_NAME).sheet1
         data_str = sheet.acell('A1').value
@@ -67,7 +74,7 @@ def save_data_to_file():
     """Saves the current subject chapter data to Google Sheets."""
     data = st.session_state['subject_chapters_data']
     try:
-        creds = Credentials.from_service_account_file(CREDENTIALS_FILE)
+        creds = get_google_credentials()
         client = gspread.authorize(creds)
         sheet = client.open(DATA_SHEET_NAME).sheet1
         json_str = serialize_data(data)
@@ -571,4 +578,3 @@ st.markdown("""
 ---
 
 """)
-
