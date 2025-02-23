@@ -10,20 +10,20 @@ import json
 import firebase_admin
 from firebase_admin import credentials, db
 
-# Initialize Firebase (make sure firebase-key.json is in your project folder)
-if not firebase_admin._apps:
-    cred = credentials.Certificate("firebase-key.json")
+# Load Firebase credentials from the environment variable
+firebase_key_json = os.getenv("FIREBASE_KEY")
+if firebase_key_json:
+    firebase_key = json.loads(firebase_key_json)
+    cred = credentials.Certificate(firebase_key)
     firebase_admin.initialize_app(cred, {
         "databaseURL": "https://neetprep-9a499.firebaseio.com/"
     })
+else:
+    st.error("Firebase credentials not found. Please set the FIREBASE_KEY environment variable.")
 
-# ---------------- Global Constants ----------------
-SUBJECT_CHOICES = ["Botany", "Zoology", "Physics", "Chemistry"]
-THEME_OPTIONS = ["Light Mode", "Dark Mode", "Colorful Mode"]
-
-# ---------------- Firebase Persistence for Subject Chapters ----------------
+# ---------------- Firebase Persistence Functions ----------------
 def process_subject_data(data):
-    # Convert stored ISO strings back to datetime objects for chapters and reminders
+    # Convert ISO string values back to datetime objects
     for subject, chapters in data.items():
         for chapter in chapters:
             if isinstance(chapter.get("entry_datetime"), str):
@@ -40,7 +40,6 @@ def process_subject_data(data):
     return data
 
 def prepare_data_for_firebase(data):
-    # Convert datetime objects to ISO strings for storage
     new_data = {}
     for subject, chapters in data.items():
         new_chapters = []
@@ -59,12 +58,11 @@ def prepare_data_for_firebase(data):
         new_data[subject] = new_chapters
     return new_data
 
-@st.cache_data(show_spinner=False)
 def load_data_from_firebase():
     ref = db.reference("subject_chapters_data")
     data = ref.get()
     if data is None:
-        return {subject: [] for subject in SUBJECT_CHOICES}
+        return {subject: [] for subject in ["Botany", "Zoology", "Physics", "Chemistry"]}
     return process_subject_data(data)
 
 def save_data_to_firebase():
@@ -73,20 +71,24 @@ def save_data_to_firebase():
     ref = db.reference("subject_chapters_data")
     ref.set(data_prepared)
 
-# ---------------- Firebase Persistence for To Do List ----------------
-@st.cache_data(show_spinner=False)
 def load_todo_from_firebase():
-    ref = db.reference("todo_list")
+    ref = db.reference("todo_data")
     data = ref.get()
     if data is None:
         return []
-    return data
+    # Filter tasks added within the last 24 hours
+    current_time_dt = datetime.datetime.now()
+    filtered_tasks = [
+        task for task in data
+        if current_time_dt - datetime.datetime.fromisoformat(task["timestamp"]) < datetime.timedelta(days=1)
+    ]
+    return filtered_tasks
 
 def save_todo_to_firebase(todo_list):
-    ref = db.reference("todo_list")
+    ref = db.reference("todo_data")
     ref.set(todo_list)
 
-# ---------------- Set Page Config First ----------------
+# ---------------- Set Page Config ----------------
 st.set_page_config(
     page_title="NEET Exam Prep - Subject-wise Tracker",
     page_icon="📚",
@@ -203,21 +205,31 @@ if 'app_theme' not in st.session_state:
 if 'todo_list' not in st.session_state:
     st.session_state['todo_list'] = load_todo_from_firebase()
 
-# ---------------- Color Palette (for CSV export and charts) ----------------
-PRIMARY_COLOR = "#007BFF"
-SECONDARY_COLOR = "#66B2FF"
-TAB_HIGHLIGHT_COLOR = "#D1E7DD"
-COLOR_SUCCESS = "#28A745"
-COLOR_WARNING = "#DC3545"
+SUBJECT_CHOICES = ["Botany", "Zoology", "Physics", "Chemistry"]
+THEME_OPTIONS = ["Light Mode", "Dark Mode", "Colorful Mode"]
 
-# ---------------- Helper for Rerun ----------------
-def safe_rerun():
-    try:
-        st.experimental_rerun()
-    except Exception:
-        st.warning("Rerun is not supported in your current version of Streamlit. Please consider upgrading.")
+# ---------------- Motivational Quotes & Study Tips ----------------
+motivational_quotes = [
+    "The expert in anything was once a beginner.",
+    "Believe you can and you're halfway there.",
+    "Success is not final, failure is not fatal: it is the courage to continue that counts.",
+    "The only way to do great work is to love what you do.",
+    "Your future is created by what you do today, not tomorrow."
+]
+study_tips = [
+    "Plan your study schedule and stick to it.",
+    "Use active recall and spaced repetition techniques.",
+    "Practice with past papers regularly.",
+    "Take short breaks to avoid burnout.",
+    "Stay hydrated and get enough sleep.",
+    "Focus on understanding concepts rather than rote memorization.",
+    "Join study groups or online forums for discussions.",
+    "Use different learning resources like textbooks, videos, and online materials.",
+    "Regularly test yourself to track progress.",
+    "Stay positive and believe in your preparation."
+]
 
-# ---------------- Helper Functions for Revision Reminders and CSV ----------------
+# ---------------- Helper Functions ----------------
 def _create_default_reminders(entry_datetime):
     return [
         {"reminder_id": 1, "type": "12 hour Reminder", "time": entry_datetime + datetime.timedelta(hours=12), "status": "Pending"},
@@ -274,17 +286,17 @@ def delete_chapter(subject, chapter_index):
     del st.session_state['subject_chapters_data'][subject][chapter_index]
     save_data_to_firebase()
     st.success("Chapter deleted successfully!")
-    safe_rerun()
+    st.experimental_rerun()
 
 def mark_reminder_revised(subject, chapter_index, reminder_index):
     st.session_state['subject_chapters_data'][subject][chapter_index]['reminders'][reminder_index]['status'] = "Revised"
     save_data_to_firebase()
-    safe_rerun()
+    st.experimental_rerun()
 
 def mark_reminder_pending(subject, chapter_index, reminder_index):
     st.session_state['subject_chapters_data'][subject][chapter_index]['reminders'][reminder_index]['status'] = "Pending"
     save_data_to_firebase()
-    safe_rerun()
+    st.experimental_rerun()
 
 def calculate_subject_progress(subject):
     chapters = st.session_state['subject_chapters_data'][subject]
@@ -443,27 +455,8 @@ with st.sidebar:
         csv_data = download_csv_data()
         st.download_button(label="Download CSV", data=csv_data, file_name="neet_prep_data.csv", mime='text/csv')
     st.header("Motivation")
-    motivational_quotes = [
-        "The expert in anything was once a beginner.",
-        "Believe you can and you're halfway there.",
-        "Success is not final, failure is not fatal: it is the courage to continue that counts.",
-        "The only way to do great work is to love what you do.",
-        "Your future is created by what you do today, not tomorrow."
-    ]
     st.markdown(f"> *{random.choice(motivational_quotes)}*")
     st.header("Study Tips")
-    study_tips = [
-        "Plan your study schedule and stick to it.",
-        "Use active recall and spaced repetition techniques.",
-        "Practice with past papers regularly.",
-        "Take short breaks to avoid burnout.",
-        "Stay hydrated and get enough sleep.",
-        "Focus on understanding concepts rather than rote memorization.",
-        "Join study groups or online forums for discussions.",
-        "Use different learning resources like textbooks, videos, and online materials.",
-        "Regularly test yourself to track progress.",
-        "Stay positive and believe in your preparation."
-    ]
     with st.expander("See Study Tips"):
         for tip in study_tips:
             st.markdown(f"- {tip}")
@@ -479,7 +472,7 @@ tabs = st.tabs(SUBJECT_CHOICES + ["Today's Revisions", "Productivity Tracking", 
 for idx, subject in enumerate(SUBJECT_CHOICES):
     with tabs[idx]:
         st.header(subject)
-        st.markdown(f"<div class='dataframe-container' style='background-color:{TAB_HIGHLIGHT_COLOR}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='dataframe-container' style='background-color:#D1E7DD; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
         display_subject_tab_content(subject)
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -508,7 +501,7 @@ with tabs[len(SUBJECT_CHOICES)]:
             status_counts[entry[4]["status"]] += 1
         df_status = pd.DataFrame({"Status": list(status_counts.keys()), "Count": list(status_counts.values())})
         fig = px.pie(df_status, names="Status", values="Count", title="Revision Status Breakdown",
-                     color_discrete_map={"Revised": COLOR_SUCCESS, "Pending": COLOR_WARNING})
+                     color_discrete_map={"Revised": "#28A745", "Pending": "#DC3545"})
         st.plotly_chart(fig, use_container_width=True)
         for subj, c_idx, chapter, r_idx, reminder in revision_entries:
             with st.container():
@@ -566,7 +559,7 @@ with tabs[-1]:
                 if st.button("❌", key=delete_key):
                     del st.session_state['todo_list'][i]
                     save_todo_to_firebase(st.session_state['todo_list'])
-                    st.rerun()
+                    st.experimental_rerun()
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.info("No manual tasks added yet.")
