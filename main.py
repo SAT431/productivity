@@ -10,7 +10,6 @@ import json
 import firebase_admin
 from firebase_admin import credentials, db
 
-# Load Firebase credentials from the environment variable
 firebase_key_json = os.getenv("FIREBASE_KEY")
 if firebase_key_json:
     firebase_key = json.loads(firebase_key_json)
@@ -19,74 +18,7 @@ if firebase_key_json:
         "databaseURL": "https://neetprep-9a499.firebaseio.com/"
     })
 else:
-    st.error("Firebase credentials not found. Please set the FIREBASE_KEY environment variable.")
-
-# ---------------- Firebase Persistence Functions ----------------
-def process_subject_data(data):
-    # Convert ISO string values back to datetime objects
-    for subject, chapters in data.items():
-        for chapter in chapters:
-            if isinstance(chapter.get("entry_datetime"), str):
-                try:
-                    chapter["entry_datetime"] = datetime.datetime.fromisoformat(chapter["entry_datetime"])
-                except Exception:
-                    pass
-            for reminder in chapter.get("reminders", []):
-                if isinstance(reminder.get("time"), str):
-                    try:
-                        reminder["time"] = datetime.datetime.fromisoformat(reminder["time"])
-                    except Exception:
-                        pass
-    return data
-
-def prepare_data_for_firebase(data):
-    new_data = {}
-    for subject, chapters in data.items():
-        new_chapters = []
-        for chapter in chapters:
-            new_chapter = chapter.copy()
-            if isinstance(new_chapter.get("entry_datetime"), datetime.datetime):
-                new_chapter["entry_datetime"] = new_chapter["entry_datetime"].isoformat()
-            new_reminders = []
-            for reminder in new_chapter.get("reminders", []):
-                new_reminder = reminder.copy()
-                if isinstance(new_reminder.get("time"), datetime.datetime):
-                    new_reminder["time"] = new_reminder["time"].isoformat()
-                new_reminders.append(new_reminder)
-            new_chapter["reminders"] = new_reminders
-            new_chapters.append(new_chapter)
-        new_data[subject] = new_chapters
-    return new_data
-
-def load_data_from_firebase():
-    ref = db.reference("subject_chapters_data")
-    data = ref.get()
-    if data is None:
-        return {subject: [] for subject in ["Botany", "Zoology", "Physics", "Chemistry"]}
-    return process_subject_data(data)
-
-def save_data_to_firebase():
-    data = st.session_state['subject_chapters_data']
-    data_prepared = prepare_data_for_firebase(data)
-    ref = db.reference("subject_chapters_data")
-    ref.set(data_prepared)
-
-def load_todo_from_firebase():
-    ref = db.reference("todo_data")
-    data = ref.get()
-    if data is None:
-        return []
-    # Filter tasks added within the last 24 hours
-    current_time_dt = datetime.datetime.now()
-    filtered_tasks = [
-        task for task in data
-        if current_time_dt - datetime.datetime.fromisoformat(task["timestamp"]) < datetime.timedelta(days=1)
-    ]
-    return filtered_tasks
-
-def save_todo_to_firebase(todo_list):
-    ref = db.reference("todo_data")
-    ref.set(todo_list)
+    st.error("Firebase key is missing. Please set the FIREBASE_KEY environment variable.")
 
 # ---------------- Set Page Config ----------------
 st.set_page_config(
@@ -197,7 +129,77 @@ st.markdown(f"""
     </div>
     """, unsafe_allow_html=True)
 
+# ---------------- Firebase Persistence Functions ----------------
+# These functions replace local file persistence.
+
+def process_subject_data(data):
+    for subject, chapters in data.items():
+        for chapter in chapters:
+            if isinstance(chapter.get("entry_datetime"), str):
+                try:
+                    chapter["entry_datetime"] = datetime.datetime.fromisoformat(chapter["entry_datetime"])
+                except Exception:
+                    pass
+            for reminder in chapter.get("reminders", []):
+                if isinstance(reminder.get("time"), str):
+                    try:
+                        reminder["time"] = datetime.datetime.fromisoformat(reminder["time"])
+                    except Exception:
+                        pass
+    return data
+
+def prepare_data_for_firebase(data):
+    new_data = {}
+    for subject, chapters in data.items():
+        new_chapters = []
+        for chapter in chapters:
+            new_chapter = chapter.copy()
+            if isinstance(new_chapter.get("entry_datetime"), datetime.datetime):
+                new_chapter["entry_datetime"] = new_chapter["entry_datetime"].isoformat()
+            new_reminders = []
+            for reminder in new_chapter.get("reminders", []):
+                new_reminder = reminder.copy()
+                if isinstance(new_reminder.get("time"), datetime.datetime):
+                    new_reminder["time"] = new_reminder["time"].isoformat()
+                new_reminders.append(new_reminder)
+            new_chapter["reminders"] = new_reminders
+            new_chapters.append(new_chapter)
+        new_data[subject] = new_chapters
+    return new_data
+
+def load_data_from_firebase():
+    ref = db.reference("subject_chapters_data")
+    data = ref.get()
+    if data is None:
+        return {subject: [] for subject in SUBJECT_CHOICES}
+    return process_subject_data(data)
+
+def save_data_to_firebase():
+    data = st.session_state['subject_chapters_data']
+    data_prepared = prepare_data_for_firebase(data)
+    ref = db.reference("subject_chapters_data")
+    ref.set(data_prepared)
+
+def load_todo_from_firebase():
+    ref = db.reference("todo_data")
+    data = ref.get()
+    if data is None:
+        return []
+    current_time_dt = datetime.datetime.now()
+    filtered_tasks = [
+        task for task in data
+        if current_time_dt - datetime.datetime.fromisoformat(task["timestamp"]) < datetime.timedelta(days=1)
+    ]
+    return filtered_tasks
+
+def save_todo_to_firebase(todo_list):
+    ref = db.reference("todo_data")
+    ref.set(todo_list)
+
 # ---------------- Session State Initialization ----------------
+SUBJECT_CHOICES = ["Botany", "Zoology", "Physics", "Chemistry"]
+THEME_OPTIONS = ["Light Mode", "Dark Mode", "Colorful Mode"]
+
 if 'subject_chapters_data' not in st.session_state:
     st.session_state['subject_chapters_data'] = load_data_from_firebase()
 if 'app_theme' not in st.session_state:
@@ -205,8 +207,12 @@ if 'app_theme' not in st.session_state:
 if 'todo_list' not in st.session_state:
     st.session_state['todo_list'] = load_todo_from_firebase()
 
-SUBJECT_CHOICES = ["Botany", "Zoology", "Physics", "Chemistry"]
-THEME_OPTIONS = ["Light Mode", "Dark Mode", "Colorful Mode"]
+# ---------------- Color Palette (for CSV export and charts) ----------------
+PRIMARY_COLOR = "#007BFF"
+SECONDARY_COLOR = "#66B2FF"
+TAB_HIGHLIGHT_COLOR = "#D1E7DD"
+COLOR_SUCCESS = "#28A745"
+COLOR_WARNING = "#DC3545"
 
 # ---------------- Motivational Quotes & Study Tips ----------------
 motivational_quotes = [
@@ -472,7 +478,7 @@ tabs = st.tabs(SUBJECT_CHOICES + ["Today's Revisions", "Productivity Tracking", 
 for idx, subject in enumerate(SUBJECT_CHOICES):
     with tabs[idx]:
         st.header(subject)
-        st.markdown(f"<div class='dataframe-container' style='background-color:#D1E7DD; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='dataframe-container' style='background-color:{TAB_HIGHLIGHT_COLOR}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
         display_subject_tab_content(subject)
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -491,8 +497,7 @@ with tabs[len(SUBJECT_CHOICES)]:
     for subj, chapters in st.session_state['subject_chapters_data'].items():
         for c_idx, chapter in enumerate(chapters):
             for r_idx, reminder in enumerate(chapter["reminders"]):
-                r_date = reminder["time"].date() if isinstance(reminder["time"], datetime.datetime) else datetime.datetime.fromisoformat(reminder["time"]).date()
-                if r_date == sel_date:
+                if reminder["time"].date() == sel_date:
                     revision_entries.append((subj, c_idx, chapter, r_idx, reminder))
     st.markdown(f"**Total revisions found: {len(revision_entries)}**")
     if revision_entries:
@@ -501,13 +506,13 @@ with tabs[len(SUBJECT_CHOICES)]:
             status_counts[entry[4]["status"]] += 1
         df_status = pd.DataFrame({"Status": list(status_counts.keys()), "Count": list(status_counts.values())})
         fig = px.pie(df_status, names="Status", values="Count", title="Revision Status Breakdown",
-                     color_discrete_map={"Revised": "#28A745", "Pending": "#DC3545"})
+                     color_discrete_map={"Revised": COLOR_SUCCESS, "Pending": COLOR_WARNING})
         st.plotly_chart(fig, use_container_width=True)
         for subj, c_idx, chapter, r_idx, reminder in revision_entries:
             with st.container():
                 st.markdown(
                     f"<div class='container-box'>"
-                    f"<strong>{subj}</strong> | {chapter['chapter_name']} | {reminder['type']} at {reminder['time'].strftime('%I:%M %p') if isinstance(reminder['time'], datetime.datetime) else reminder['time']} | Status: {reminder['status']}"
+                    f"<strong>{subj}</strong> | {chapter['chapter_name']} | {reminder['type']} at {reminder['time'].strftime('%I:%M %p')} | Status: {reminder['status']}"
                     f"</div>", unsafe_allow_html=True)
                 key = f"rev_{subj}_{c_idx}_{r_idx}"
                 current = reminder["status"] == "Revised"
@@ -571,15 +576,14 @@ with tabs[-1]:
     for subj, chapters in st.session_state['subject_chapters_data'].items():
         for c_idx, chapter in enumerate(chapters):
             for r_idx, reminder in enumerate(chapter["reminders"]):
-                r_date = reminder["time"].date() if isinstance(reminder["time"], datetime.datetime) else datetime.datetime.fromisoformat(reminder["time"]).date()
-                if r_date == today_date:
+                if reminder["time"].date() == today_date:
                     rev_tasks.append((subj, c_idx, chapter, r_idx, reminder))
     if rev_tasks:
         for subj, c_idx, chapter, r_idx, reminder in rev_tasks:
             with st.container():
                 st.markdown(
                     f"<div class='container-box'>"
-                    f"<strong>{subj}</strong> | {chapter['chapter_name']} | {reminder['type']} at {reminder['time'].strftime('%I:%M %p') if isinstance(reminder['time'], datetime.datetime) else reminder['time']} | Status: {reminder['status']}"
+                    f"<strong>{subj}</strong> | {chapter['chapter_name']} | {reminder['type']} at {reminder['time'].strftime('%I:%M %p')} | Status: {reminder['status']}"
                     f"</div>", unsafe_allow_html=True)
                 key = f"todo_rev_{subj}_{c_idx}_{r_idx}"
                 current = reminder["status"] == "Revised"
