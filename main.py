@@ -14,9 +14,11 @@ firebase_key_json = os.getenv("FIREBASE_KEY")
 if firebase_key_json:
     firebase_key = json.loads(firebase_key_json)
     cred = credentials.Certificate(firebase_key)
-    firebase_admin.initialize_app(cred, {
-        "databaseURL": "https://neetprep-9a499-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    })
+    # Initialize Firebase only if not already initialized
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred, {
+            "databaseURL": "https://neetprep-9a499-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        })
 else:
     st.error("Firebase key is missing. Please set the FIREBASE_KEY environment variable.")
 
