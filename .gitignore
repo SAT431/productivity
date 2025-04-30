@@ -1,0 +1,13 @@
+# .gitignore
+
+# Streamlit secrets file
+.streamlit/secrets.toml
+
+# Other typical Python ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+*.env
